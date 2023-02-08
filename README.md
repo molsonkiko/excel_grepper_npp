@@ -14,7 +14,7 @@ There is also a CLI tool that just prints JSON to the terminal. It has the same 
 
 ## CHANGES ##
 
-[0.2.0] (2023-02-07)
+__[0.2.0] (2023-02-07)__
 
 ### Added
 
@@ -27,6 +27,6 @@ There is also a CLI tool that just prints JSON to the terminal. It has the same 
 
 Previously, the sheet names given didn't match the names as they would appear in an Excel workbook (e.g., the first sheet was `sheet1` even if it was actually named `foo bar`)
 
-[0.1.0] (2023-02-04)
+__[0.1.0] (2023-02-04)__
 
 Basic functionality added. Only filter text, no filename or sheet name filtering, no option to list only sheet names.

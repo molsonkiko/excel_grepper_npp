@@ -7,7 +7,7 @@ from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 # yay, nothing outside standard library required!
 
-__version__ =  '0.2.0'
+__version__ =  '0.2.1'
 
 logging.basicConfig(level=logging.WARNING)
 
@@ -19,8 +19,14 @@ def grep_in_one_sheet(zf, sheet, is_match, shared_strings):
     sheet: a file in a zip archive representing the data in an Excel worksheet
     is_match: a function that takes a string as input and returns
         true/false, whether that string matches a pattern/contains a substring
-    shared_strings: a list of all the unique strings in the Excel workbook
-    returns: a dict mapping 
+    shared_strings: a list of all the unique strings in the Excel workbook.
+    a dict of the form
+    {
+        'text': {cell.address: cell.text for cell where
+            cell.text matched is_match},
+        'formulas': {cell.address: cell.formula for cell where
+            cell.formula matched is_match}
+    }
     '''
     in_formulas = {}
     in_texts = {}
@@ -81,25 +87,44 @@ def grep_in_one_sheet(zf, sheet, is_match, shared_strings):
 def grep_in_one_file(zf: ZipFile, is_match, sheet_name_regex, sheet_names_only) -> dict[str, dict[str, dict[str, str]]]:
     '''
     zf: a pointer to an open zip file (an excel workbook)
-    is_match: a function taking a string as input and returning a boolean (whether
-        the string matches a pattern)
-    returns a dict similar to the following:
-        {
-        "sheet1": {
-            "formulas": {
-                "C5": "_xlfn.CONCAT(C3, \" ist der hund\")"
-            },
-            "text": {
-                "C2": "hunden",
-                "C5": "blutenheim ist der hund"
-            }
+    is_match: a function taking a string as input and returning a boolean 
+        (whether the string matches a pattern).
+        See grep_in_one_sheet for how this is used.
+    sheet_name_regex: a regex that sheet names must match to be considered.
+    sheet_names_only: a boolean, whether to only get the names of sheets
+        matching sheet_name_regex, and not read the sheets.
+    EXAMPLES:
+>>> grep_in_one_file(zf, lambda x: 'hund' in x, '', False)
+{
+    "foo": {
+        "formulas": {
+            "C5": "_xlfn.CONCAT(C3, \" ist der hund\")"
         },
-        "sheet2": {
-            "text": {
-                "B3": "hundeblarten"
-            }
+        "text": {
+            "C2": "hunden",
+            "C5": "blutenheim ist der hund"
+        }
+    },
+    "bar": {
+        "text": {
+            "B3": "hundeblarten"
         }
     }
+}
+>>> grep_in_one_file(zf, lambda x: 'hund' in x, 'foo', False)
+{
+    "foo": {
+        "formulas": {
+            "C5": "_xlfn.CONCAT(C3, \" ist der hund\")"
+        },
+        "text": {
+            "C2": "hunden",
+            "C5": "blutenheim ist der hund"
+        }
+    }
+}
+>>> grep_in_one_file(zf, lambda x: 'hund' in x, '', True)
+['foo', 'bar']
     '''
     sheets = []
     shared_strings_file = None
@@ -160,13 +185,14 @@ def grep_in_excel_files(text_pattern, dirname, regex, recurse, ignorecase, sheet
     regex: whether to do regular expression matching
     recurse: whether to also search in subdirectories of dirname
     ignorecase: whether to ignore case when trying to match text patterns
-    sheet_name_regex: a regex that sheet names must match to be considered
+    sheet_name_regex: a regex that sheet names must match to be considered.
+        Matches are case-insensitive.
     sheet_names_only: if true, only get a list of sheets that match
         sheet_name_regex in the workbooks of interest
     fname_pattern: a glob for determining what filenames to search
     returns: see EXAMPLES
-EXAMPLES:
->>> grep_in_excel_files('hund', "c:\\users\\mjols\documents\\example nested excel dirs", regex=False, recurse=True, ignorecase=True)
+EXAMPLES (see grep_in_one_file for other examples using sheet filters:
+>>> grep_in_excel_files('hund', "c:\\users\\mjols\documents\\example nested excel dirs", regex=False, recurse=True, ignorecase=True, sheet_name_regex='', sheet_names_only=False, '**/*.xlsx')
 {
     "c:\\users\\mjols\\documents\\example nested excel dirs\\bar\\barfoo\\barfoo.xlsx": {
         "sheet1": {
@@ -188,6 +214,16 @@ EXAMPLES:
         "sheet2": {
             "text": {
                 "B3": "hundeblarten"
+            }
+        }
+    }
+}
+>>> grep_in_excel_files('hund', "c:\\users\\mjols\documents\\example nested excel dirs", regex=False, recurse=True, ignorecase=True, sheet_name_regex='', sheet_names_only=False, '**/*bar*.xlsx')
+{
+    "c:\\users\\mjols\\documents\\example nested excel dirs\\bar\\barfoo\\barfoo.xlsx": {
+        "sheet1": {
+            "text": {
+                "D1": "HUND"
             }
         }
     }
@@ -231,12 +267,15 @@ def plugin_actions():
     import json
     try:
         from Npp import notepad, editor
-        curdir = os.path.dirname(notepad.getCurrentFilename())
     except:
         raise NotepadNotFound
+    curdir = os.path.dirname(notepad.getCurrentFilename())
+    version = __version__
+    while version.endswith('.0'):
+        version = version[:-2]
     user_input = notepad.prompt(
         'Enter your choices below',
-        f'Excel Grepping tool {__version__}',
+        f'Excel Grepping tool v{version}',
         '\r\n'.join((
             'text to search for:',
             f'absolute directory path:{curdir}',
@@ -254,7 +293,7 @@ def plugin_actions():
         print("write your choices after the colons, and don't erase any lines")
         return
     pattern, dirname, regex, recurse, ignorecase, sheet_name_regex, sheet_names_only, fname_pattern = choices
-    if not pattern:
+    if not pattern and not sheet_names_only:
         notepad.messageBox('Must enter a pattern!', 'Enter a pattern!')
         return
     if not dirname:
@@ -290,7 +329,7 @@ except NotepadNotFound:
     parser.add_argument('--regex', '-x', action='store_true')
     parser.add_argument('--recurse', '-r', action='store_true')
     parser.add_argument('--ignorecase', '-i', action='store_true')
-    parser.add_argument('--sheets_only', '-s', action='store_true', help='whether to only show a list of sheet names matching sheet_regex in the files')
+    parser.add_argument('--sheets_only', '-s', action='store_true', help='whether to only show a list of sheet names matching sheet_regex in the files. Case insensitive.')
     args = parser.parse_args()
     results = grep_in_excel_files(
         args.text_pattern,
